@@ -1,25 +1,20 @@
-const dns = require("node:dns")
-dns.setServers(['8.8.8.8','8.8.4.4',"1.1.1.1"])
+const dns = require("node:dns");
+dns.setServers(['8.8.8.8', '8.8.4.4', "1.1.1.1"]); // network fix
+
 const express = require('express');
 const cors = require('cors');
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 require('dotenv').config();
 
 const app = express();
 const port = process.env.PORT || 5000;
 
-// Middleware
+// ----------------- middleware-----------------
 app.use(cors());
 app.use(express.json());
 
-// Root Route
-app.get('/', (req, res) => {
-    res.send('HireLoop Server is Running!');
-});
-
-
-const uri = process.env.MONGODB_URI
-
+// ----------------- Database Config -----------------
+const uri = process.env.MONGODB_URI;
 const client = new MongoClient(uri, {
     serverApi: {
         version: ServerApiVersion.v1,
@@ -28,44 +23,102 @@ const client = new MongoClient(uri, {
     }
 });
 
+let db, jobCollection, companyCollection;
 
-async function run() {
-    
+async function connectDB() {
     try {
-        // Connect the client to the server
         await client.connect();
-        
-        const db = client.db("HireLoop");
-        const jobCollection = db.collection('jobs');
+        db = client.db("HireLoop");
+        jobCollection = db.collection('jobs');
+        companyCollection = db.collection('companies');
+        applicationCollection = db.collection('applications');
 
-        app.get('/api/jobs', async(req, res)=>{
-            const query = {}
-            if(req.query.companyId) query.companyId = Number(req.query.companyId)
-            if(req.query.status) query.status = req.query.status
-            
-            const cursor = jobCollection.find(query)
-            const result = await cursor.toArray();
-            res.send(result)
-        })
-
-        app.post('/api/jobs', async(req, res)=>{
-            const job = req.body;
-            const result = await jobCollection.insertOne(job);
-            res.send(result);
-        })
-
-
-        // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
         console.log("🟢 Pinged your deployment. You successfully connected to MongoDB!");
-
-        app.listen(port, () => {
-            console.log(`🚀 Server listening on port ${port}`);
-        });
-
     } catch (error) {
         console.error("🔴 Failed to connect to MongoDB:", error);
     }
 }
+connectDB();
 
-run().catch(console.dir);
+const verifyDbReady = (req, res, next) => {
+    if (!jobCollection || !companyCollection) {
+        return res.status(503).json({ error: "Database is initializing, please try again in a moment." });
+    }
+    next();
+};
+
+// ----------------- API Router -----------------
+
+// Root Route
+app.get('/', (req, res) => {
+    res.send('HireLoop Server is Running!');
+});
+
+// Jobs GET Route
+app.get('/api/jobs', verifyDbReady, async (req, res) => {
+    try {
+        const query = {};
+        if (req.query.companyId) query.companyId = req.query.companyId;
+        if (req.query.status) query.status = req.query.status;
+
+        const cursor = jobCollection.find(query);
+        const result = await cursor.toArray();
+        res.send(result);
+    } catch (error) {
+        res.status(500).send({ error: error.message });
+    }
+});
+
+app.get('/api/jobs/:id', async (req, res) => {
+    const { id } = req.params;
+    const query = { _id: new ObjectId(id) }
+    const result = await jobCollection.findOne(query);
+    res.json(result)
+})
+
+// Jobs POST Route
+app.post('/api/jobs', verifyDbReady, async (req, res) => {
+    try {
+        const jobData = req.body;
+        const job = { ...jobData, createdAt: new Date() };
+        const result = await jobCollection.insertOne(job);
+        res.send(result);
+    } catch (error) {
+        res.status(500).send({ error: error.message });
+    }
+});
+
+// Company POST Route
+app.post('/api/companies', verifyDbReady, async (req, res) => {
+    try {
+        const company = { ...req.body, createdAt: new Date() };
+        const result = await companyCollection.insertOne(company);
+        res.send(result);
+    } catch (error) {
+        res.status(500).send({ error: error.message });
+    }
+});
+
+// Company get Route
+app.get('/api/mycompany', verifyDbReady, async (req, res) => {
+    try {
+        const query = {};
+        if (req.query.recruiterId) query.recruiterId = req.query.recruiterId;
+
+        const result = await companyCollection.findOne(query);
+        res.send(result);
+    } catch (error) {
+        res.status(500).send({ error: error.message });
+    }
+})
+
+
+
+
+
+
+// ----------------- Server Listening (instant) -----------------
+app.listen(port, () => {
+    console.log(`🚀 Server listening on port ${port}`);
+});
