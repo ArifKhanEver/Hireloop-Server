@@ -114,6 +114,16 @@ app.get('/api/mycompany', verifyDbReady, async (req, res) => {
 })
 
 
+//Post application
+app.post('/api/applications', verifyDbReady, async (req, res) => {
+    try {
+        const applicationData = { ...req.body, createdAt: new Date() };
+        const result = await applicationCollection.insertOne(applicationData);
+        res.send(result);
+    } catch (error) {
+        res.status(500).send({ error: error.message });
+    }
+})
 
 
 
