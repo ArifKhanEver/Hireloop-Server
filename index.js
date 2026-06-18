@@ -32,6 +32,9 @@ async function connectDB() {
         jobCollection = db.collection('jobs');
         companyCollection = db.collection('companies');
         applicationCollection = db.collection('applications');
+        planCollection = db.collection("plans");
+        subscriptionCollection = db.collection("subscriptions")
+        usersCollection = db.collection('user')
 
         await client.db("admin").command({ ping: 1 });
         console.log("🟢 Pinged your deployment. You successfully connected to MongoDB!");
@@ -125,6 +128,52 @@ app.post('/api/applications', verifyDbReady, async (req, res) => {
     }
 })
 
+
+// get all applications
+app.get('/api/applications', verifyDbReady, async(req, res)=> {
+    const query = {};
+    if(req.query.applicantId){
+        query.applicantId = req.query.applicantId
+    }
+
+    if(req.query.jobId){
+        query.jobId = req.query.jobId
+    }
+
+    const result = await applicationCollection.find(query).toArray();
+    res.json(result);
+})
+
+
+//Plan
+app.get('/api/plans', verifyDbReady, async(req, res)=> {
+    const query = {}
+    if(req.query.planId){
+        query.id = req.query.planId
+    }
+
+    const result = await planCollection.findOne(query)
+    res.json(result);
+})
+
+//subscription
+app.post('/api/subscriptions', verifyDbReady, async(req, res)=> {
+    const data = { ...req.body, createdAt: new Date()}
+
+    const result = await subscriptionCollection.insertOne(data)
+    
+
+    const filter = {email: data.email};
+    const updateDocument = {
+        $set: {
+            plan: data.planId
+        }
+    }
+
+    const updateResult = await usersCollection.updateOne(filter,updateDocument)
+    res.json(updateResult)
+
+})
 
 
 
