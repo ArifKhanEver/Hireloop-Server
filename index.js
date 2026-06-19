@@ -35,6 +35,7 @@ async function connectDB() {
         planCollection = db.collection("plans");
         subscriptionCollection = db.collection("subscriptions")
         usersCollection = db.collection('user')
+        sessionCollection = db.collection('session')
 
         await client.db("admin").command({ ping: 1 });
         console.log("🟢 Pinged your deployment. You successfully connected to MongoDB!");
@@ -42,6 +43,7 @@ async function connectDB() {
         console.error("🔴 Failed to connect to MongoDB:", error);
     }
 }
+
 connectDB();
 
 const verifyDbReady = (req, res, next) => {
@@ -50,6 +52,40 @@ const verifyDbReady = (req, res, next) => {
     }
     next();
 };
+
+
+const verifyToken = async(req, res, next)=>{
+    const authHeader = req.headers?.authorization;
+    if(!authHeader){
+        return res.status(401).send({message: "unauthorized access"})
+    }
+
+    const token = authHeader.split(" ")[1]
+
+    if(!token) {
+        return res.status(401).send({message: "unauthorized token"})
+    }
+
+    const query = {token: token}
+    const session = await sessionCollection.findOne(query)
+    const userId = session.userId
+
+    const userQuery = {
+        _id: userId
+    }
+
+    const user = await usersCollection.findOne(userQuery)
+
+    req.user = user
+    next()
+}
+
+const verifySeeker = async(req, res, next)=> {
+    if(req.user?.role !== "seeker"){
+        return res.status(403).send({message: "forbidden access"})
+    }
+    next();
+}
 
 // ----------------- API Router -----------------
 
@@ -104,6 +140,16 @@ app.post('/api/companies', verifyDbReady, async (req, res) => {
 });
 
 // Company get Route
+app.get('/api/companies', verifyDbReady, verifyToken, async (req, res) => {
+    try {
+        const result = await companyCollection.find().toArray();
+        res.send(result);
+    } catch (error) {
+        res.status(500).send({ error: error.message });
+    }
+});
+
+// Company get Route
 app.get('/api/mycompany', verifyDbReady, async (req, res) => {
     try {
         const query = {};
@@ -114,6 +160,22 @@ app.get('/api/mycompany', verifyDbReady, async (req, res) => {
     } catch (error) {
         res.status(500).send({ error: error.message });
     }
+})
+
+
+
+// company patch route
+app.patch('/api/companies/:id', verifyDbReady, verifyToken, async(req, res)=> {
+    const {id} = req.params;
+    const updatedCompany = req.body;
+    const filter = {_id: new ObjectId(id)}
+    const updatedDoc = {
+        $set: {
+            status: updatedCompany.status
+        }
+    }
+    const result = await companyCollection.updateOne(filter, updatedDoc);
+    res.json(result)
 })
 
 
@@ -130,10 +192,11 @@ app.post('/api/applications', verifyDbReady, async (req, res) => {
 
 
 // get all applications
-app.get('/api/applications', verifyDbReady, async(req, res)=> {
+app.get('/api/applications', verifyDbReady, verifyToken, verifySeeker, async(req, res)=> {
     const query = {};
     if(req.query.applicantId){
         query.applicantId = req.query.applicantId
+        console.log(req.user, req.query.applicantId)
     }
 
     if(req.query.jobId){
